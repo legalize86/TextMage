@@ -94,20 +94,22 @@ npm run build
 
 ## 📁 Структура проекта
 
+```text
 TextMage/
 ├── main.js              # Основной процесс Electron
 ├── preload.js           # Preload-скрипт для безопасности
 ├── words.js             # Базовый словарь T9
-├── t9.js                   # Движок T9-автодополнения
-├── t9.css                 # Стили интерфейса
-├── about.html        # Страница "О программе"
-├── package.json     # Конфигурация npm
-├── README.md     # Документация
-├── LICENSE             # Лицензия MIT
+├── t9.js                # Движок T9-автодополнения
+├── t9.css               # Стили интерфейса
+├── about.html           # Страница "О программе"
+├── package.json         # Конфигурация npm
+├── README.md            # Документация
+├── LICENSE              # Лицензия MIT
 ├── assets/
 │   └── icon.png         # Иконка приложения
 └── dist/
     └── TextMage-1.0.0.AppImage  # Собранная версия
+
 
 # 📊 Системные требования
 
