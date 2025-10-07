@@ -31,9 +31,12 @@ chmod +x TextMage-*.AppImage
 
 **Установка и запуск**
 ### Клонируйте репозиторий
-- git clone https://github.com/legalize86/TextMage.git
+```bash
+git clone https://github.com/legalize86/TextMage.git
+```
+```bash
 - cd TextMage
-
+```
 ### Установите зависимости
 npm install
 
