@@ -8,13 +8,14 @@
 ```bash
 # 1. Скачайте AppImage со страницы Releases
 wget https://github.com/legalize86/TextMage/releases/latest/download/TextMage-1.0.0.AppImage
-
+```
+```bash
 # 2. Сделайте исполняемым
 chmod +x TextMage-*.AppImage
-
+```
+```bash
 # 3. Запустите
 ./TextMage-*.AppImage
-
 ```
 ### Или через графический интерфейс:
 
@@ -38,14 +39,17 @@ git clone https://github.com/legalize86/TextMage.git
 cd TextMage
 ```
 ### Установите зависимости
+```bash
 npm install
-
+```
 ### Запустите в режиме разработки
+```bash
 npm start
-
+```
 ### Соберите AppImage
+```bash
 npm run build
-
+```
 **✨ Возможности**
 
 | Ассистент      | Горячая клавиша | Назначение                 |
