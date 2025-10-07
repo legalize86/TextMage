@@ -1,0 +1,75 @@
+/* Стили для горизонтальной панели предложений */
+#t9-suggestions-bar {
+    scrollbar-width: thin;
+    scrollbar-color: #ccc transparent;
+}
+
+#t9-suggestions-bar::-webkit-scrollbar {
+    height: 4px;
+}
+
+#t9-suggestions-bar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#t9-suggestions-bar::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+}
+
+#t9-suggestions-bar button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+#t9-suggestions-bar button:active {
+    transform: translateY(0);
+}
+
+/* Анимации */
+@keyframes t9SlideDown {
+    from { 
+        transform: translateY(-100%);
+        opacity: 0; 
+    }
+    to { 
+        transform: translateY(0);
+        opacity: 1; 
+    }
+}
+
+@keyframes t9SlideIn {
+    from { 
+        transform: translateX(100%); 
+        opacity: 0; 
+    }
+    to { 
+        transform: translateX(0); 
+        opacity: 1; 
+    }
+}
+
+@keyframes t9SlideOut {
+    from { 
+        transform: translateX(0); 
+        opacity: 1; 
+    }
+    to { 
+        transform: translateX(100%); 
+        opacity: 0; 
+    }
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+    #t9-suggestions-bar {
+        font-size: 12px;
+        padding: 6px 8px;
+        max-height: 50px;
+    }
+    
+    #t9-suggestions-bar button {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+}
