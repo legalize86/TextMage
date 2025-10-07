@@ -35,7 +35,7 @@ chmod +x TextMage-*.AppImage
 git clone https://github.com/legalize86/TextMage.git
 ```
 ```bash
-- cd TextMage
+cd TextMage
 ```
 ### Установите зависимости
 npm install
