@@ -1,0 +1,36 @@
+{
+  "name": "textmage",
+  "version": "1.0.0",
+  "description": "TextMage - Universal AI Assistant with T9 autocomplete (Perplexity, Copilot, Gemini, DeepSeek, ChatGPT)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --linux",
+    "build-win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.legalize86.textmage",
+    "productName": "TextMage",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "words.js",
+      "t9.js",
+      "t9.css",
+      "about.html",
+      "assets/**/*"
+    ],
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "category": "Office"
+    }
+  },
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
