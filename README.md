@@ -119,7 +119,7 @@ TextMage/
 - Память: ≥ 512 МБ RAM (рекомендовано ≥ 1 ГБ)
 - Диск: ~100 МБ свободного места
 
-## 👨‍💻 Автор
+# 👨‍💻 Автор
 
 **Legalize86**  
 🔗 GitHub: [@legalize86](https://github.com/legalize86)
