@@ -129,6 +129,10 @@ TextMage/
 
 ## Скриншоты TextMage
 
+Меню выбора ИИ:
+
+![Меню](assets/screenshots/menu.png)
+
 perplexity:
 
 ![perplexity](assets/screenshots/perplexity.png)
