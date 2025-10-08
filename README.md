@@ -1,22 +1,6 @@
 ## TextMage 🔮
 **TextMage** — универсальный AI-ассистент с T9-автодополнением для **Perplexity**, **Copilot**, **Gemini**, **DeepSeek** и **ChatGPT**.
 ---
-## Скриншоты TextMage
-
-T9 подсказки:
-
-![T9 подсказки](assets/screenshots/t9_top_bar.png)
-
-T9 добавить слово:
-
-![T9 подсказки](assets/screenshots/t9_add_word.png)
-
-Меню "О программе":
-
-![О программе](assets/screenshots/about.png)
-
-
-
 
 ### 📥 Скачать готовое приложение
 **Последняя версия:** [TextMage-1.0.0.AppImage](https://github.com/legalize86/TextMage/releases/latest)
@@ -142,6 +126,44 @@ TextMage/
 - Архитектура: x86_64
 - Память: ≥ 512 МБ RAM (рекомендовано ≥ 1 ГБ)
 - Диск: ~100 МБ свободного места
+
+## Скриншоты TextMage
+
+perplexity:
+
+![perplexity](assets/screenshots/perplexity.png)
+
+copilot:
+
+![copilot](assets/screenshots/copilot.png)
+
+gemini:
+
+![gemini](assets/screenshots/gemini.png)
+
+chatgpt:
+
+![chatgpt](assets/screenshots/chatgpt.png)
+
+Управление словарем:
+
+![Управление словарем](assets/screenshots/dictionary_manager.png)
+
+T9 подсказки:
+
+![T9 подсказки](assets/screenshots/t9_top_bar.png)
+
+T9 добавить слово:
+
+![T9 подсказки](assets/screenshots/t9_add_word.png)
+
+Меню "О программе":
+
+![О программе](assets/screenshots/about.png)
+
+Меню "О программе2":
+
+![О программе2](assets/screenshots/about2.png)
 
 ### 👨‍💻 Автор
 
