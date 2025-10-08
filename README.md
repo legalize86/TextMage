@@ -171,9 +171,9 @@ T9 добавить слово:
 
 ### 👨‍💻 Автор
 
-**Legalize86**  
-🔗 GitHub: [@legalize86](https://github.com/legalize86)
-📲 Telegram: [@legalize86](https://t.me/legalize86)
+- **Legalize86**  
+- 🔗 GitHub: [@legalize86](https://github.com/legalize86)
+- 📲 Telegram: [@legalize86](https://t.me/legalize86)
 
 ### 🙏 Благодарности
 
