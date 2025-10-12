@@ -145,6 +145,10 @@ gemini:
 
 ![gemini](assets/screenshots/gemini.png)
 
+deepseek:
+
+![chatgpt](assets/screenshots/deepseek.png)
+
 chatgpt:
 
 ![chatgpt](assets/screenshots/chatgpt.png)
