@@ -3,7 +3,7 @@
 ---
 
 ### 📥 Скачать готовое приложение
-**Последняя версия:** [TextMage-1.0.0.AppImage](https://github.com/legalize86/TextMage/releases/latest)
+**Последняя версия:** [TextMage-1.1.0.AppImage](https://github.com/legalize86/TextMage/releases/latest)
 
 ### 🚀 Быстрый запуск (для пользователей)
 ```bash
