@@ -1,34 +1,137 @@
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-// Хранилище для последней открытой вкладки
-let lastOpenedUrl = null;
-let t9Enabled = true; // Глобальный флаг состояния T9
+app.setName('TextMage');
+app.setAppUserModelId('TextMage');
 
-// Обработчики IPC для работы с файлами
-ipcMain.handle('read-file', async (event, filePath) => {
+let lastOpenedUrl = null;
+let t9Enabled = true;
+let mainWindow = null;
+
+const userDataPath = app.getPath('userData');
+const configPath = path.join(userDataPath, 'config.json');
+const boundsPath = path.join(userDataPath, 'window-bounds.json');
+
+const defaultUA = 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0';
+const copilotUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
+const deepseekUA = 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 LibreWolf/130.0';
+
+// ===== IPC Handlers =====
+ipcMain.handle('read-file', async (_, filePath) => {
   try {
     return fs.readFileSync(filePath, 'utf8');
-  } catch (error) {
-    throw new Error(`Error reading file: ${error.message}`);
+  } catch (e) {
+    console.error('read-file error:', e);
+    return null;
   }
 });
 
-ipcMain.handle('file-exists', async (event, filePath) => {
+ipcMain.handle('file-exists', async (_, filePath) => {
   try {
     return fs.existsSync(filePath);
-  } catch (error) {
+  } catch {
     return false;
   }
 });
 
+ipcMain.handle('toggle-t9', async () => {
+  const newStatus = !t9Enabled;
+  t9Enabled = newStatus;
+  fs.writeFileSync(configPath, JSON.stringify({ lastUrl: lastOpenedUrl, t9Enabled }));
+  
+  if (mainWindow) {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'TextMage',
+      message: `T9 ${newStatus ? 'включен' : 'выключен'}`,
+      detail: newStatus ? 'Автодополнение и T9 ввод активны' : 'Режим чистого браузера'
+    });
+    
+    createMenu(mainWindow);
+    
+    if (newStatus) {
+      // Включение - перезагружаем для чистой инициализации
+      mainWindow.reload();
+    } else {
+      // Выключение - агрессивная очистка
+      await mainWindow.webContents.executeJavaScript(`
+        try {
+          // Удаляем все T9 элементы
+          const elementsToRemove = [
+            't9-suggestions-bar',
+            't9-add-word-btn', 
+            't9-dictionary-btn',
+            't9-notification',
+            't9-add-word-dialog',
+            't9-dictionary-manager'
+          ];
+          
+          elementsToRemove.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+          });
+          
+          // Отключаем T9 логику
+          if (window.t9Predictor) {
+            window.t9Predictor.isEnabled = false;
+            window.t9Predictor.hideSuggestions();
+            
+            // Очищаем все интервалы и таймауты
+            if (window.t9Predictor.inputDebounce) {
+              clearTimeout(window.t9Predictor.inputDebounce);
+            }
+            
+            // Удаляем глобальный объект
+            window.t9Predictor = null;
+          }
+          
+          // Удаляем все стили T9
+          const allStyles = document.querySelectorAll('style');
+          allStyles.forEach(style => {
+            if (style.textContent && (
+              style.textContent.includes('t9-') ||
+              style.textContent.includes('T9Predictor') ||
+              style.textContent.includes('#t9-suggestions-bar')
+            )) {
+              style.remove();
+            }
+          });
+          
+          console.log('🔴 T9 полностью отключен');
+        } catch (error) {
+          console.error('Ошибка при отключении T9:', error);
+        }
+      `).catch(() => {});
+    }
+  }
+  
+  return t9Enabled;
+});
+
+ipcMain.handle('get-t9-status', async () => t9Enabled);
+
+// ===== App Startup =====
+app.whenReady().then(() => {
+  try {
+    if (fs.existsSync(configPath)) {
+      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      lastOpenedUrl = cfg.lastUrl || null;
+      t9Enabled = cfg.t9Enabled ?? true;
+    }
+  } catch (e) {
+    console.warn('Config read error:', e);
+  }
+  createWindow();
+});
+
+// ===== Window Management =====
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, 'assets', 'icon.png'),
     title: 'TextMage',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -36,298 +139,166 @@ function createWindow() {
     }
   });
 
-  // Обновляем иконку при фокусе
-  win.on('focus', () => {
-    win.setIcon(path.join(__dirname, 'assets', 'icon.png'));
+  // Восстановление позиции окна
+  if (fs.existsSync(boundsPath)) {
+    try {
+      const bounds = JSON.parse(fs.readFileSync(boundsPath, 'utf8'));
+      mainWindow.setBounds(bounds);
+    } catch (e) {
+      console.warn('Bounds restore error:', e);
+    }
+  }
+
+  mainWindow.on('close', () => {
+    try {
+      fs.writeFileSync(boundsPath, JSON.stringify(mainWindow.getBounds()));
+      fs.writeFileSync(configPath, JSON.stringify({ lastUrl: lastOpenedUrl, t9Enabled }));
+    } catch (e) {
+      console.warn('Save bounds error:', e);
+    }
   });
 
-  // Устанавливаем иконку при создании
-  win.setIcon(path.join(__dirname, 'assets', 'icon.png'));
+  // User-Agent настройки
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders;
+    const url = details.url;
+    if (url.includes('copilot.microsoft.com') || url.includes('bing.com')) {
+      headers['User-Agent'] = copilotUA;
+    } else if (url.includes('deepseek.com')) {
+      headers['User-Agent'] = deepseekUA;
+    } else {
+      headers['User-Agent'] = defaultUA;
+    }
+    callback({ requestHeaders: headers });
+  });
 
-  // Загружаем последнюю открытую вкладку или Copilot по умолчанию
   const startUrl = lastOpenedUrl || 'https://copilot.microsoft.com/';
-  win.loadURL(startUrl);
-  
-  // Предотвращаем изменение заголовка
-  win.on('page-title-updated', (e) => {
-    e.preventDefault();
-  });
+  mainWindow.loadURL(startUrl);
 
-  // Сохраняем URL при навигации
-  win.webContents.on('did-navigate', (event, url) => {
-    lastOpenedUrl = url;
-  });
+  // Сохранение URL
+  const saveUrl = (_, url) => {
+    if (url && !url.startsWith('chrome://') && !url.startsWith('devtools://')) {
+      lastOpenedUrl = url;
+    }
+  };
+  mainWindow.webContents.on('did-navigate', saveUrl);
+  mainWindow.webContents.on('did-navigate-in-page', saveUrl);
 
-  win.webContents.on('did-navigate-in-page', (event, url) => {
-    lastOpenedUrl = url;
-  });
-
-  // Нативное контекстное меню Electron
-  win.webContents.on('context-menu', (event, params) => {
+  // Контекстное меню
+  mainWindow.webContents.on('context-menu', (event, params) => {
     const { selectionText, isEditable } = params;
-    
     const template = [];
     
-    if (selectionText && selectionText.trim() !== '') {
-      template.push({
-        label: 'Копировать',
-        role: 'copy',
-        accelerator: 'Ctrl+C'
-      });
+    if (selectionText && selectionText.trim()) {
+      template.push({ label: 'Копировать', role: 'copy', accelerator: 'Ctrl+C' });
     }
     
     if (isEditable) {
       if (template.length > 0) template.push({ type: 'separator' });
-      
       template.push(
-        {
-          label: 'Вставить',
-          role: 'paste',
-          accelerator: 'Ctrl+V'
-        },
-        {
-          label: 'Вырезать',
-          role: 'cut',
-          accelerator: 'Ctrl+X',
-          enabled: !!selectionText
-        },
+        { label: 'Вставить', role: 'paste', accelerator: 'Ctrl+V' },
+        { label: 'Вырезать', role: 'cut', accelerator: 'Ctrl+X', enabled: !!selectionText },
         { type: 'separator' },
-        {
-          label: 'Выделить все',
-          role: 'selectall',
-          accelerator: 'Ctrl+A'
-        }
+        { label: 'Выделить все', role: 'selectall', accelerator: 'Ctrl+A' }
       );
     }
     
     if (template.length > 0) {
-      const contextMenu = Menu.buildFromTemplate(template);
-      contextMenu.popup();
+      Menu.buildFromTemplate(template).popup();
     }
   });
 
-  // Инжектируем T9 после загрузки страницы
-  win.webContents.on('did-finish-load', () => {
-    setTimeout(() => {
-      injectT9Autocomplete(win);
-    }, 3000);
+  // Инжект T9 после загрузки (только если включен)
+  mainWindow.webContents.on('did-finish-load', () => {
+    const currentUrl = mainWindow.webContents.getURL();
+    const shouldInject = !currentUrl.startsWith('devtools://') && 
+                        !currentUrl.startsWith('chrome://') && 
+                        t9Enabled;
+    
+    if (shouldInject) {
+      setTimeout(() => injectT9(mainWindow), 800); // Увеличил задержку для стабильности
+    }
   });
 
-  createMenu(win);
+  createMenu(mainWindow);
 }
 
-function injectT9Autocomplete(win) {
-    try {
-        console.log('Injecting T9 autocomplete...');
+// ===== T9 Injection =====
+async function injectT9(win) {
+  if (!t9Enabled) {
+    console.log('🟡 T9 отключен, инжект пропущен');
+    return;
+  }
+  
+  try {
+    console.log('🟢 Начинаем инжект T9...');
+    
+    // Инжект CSS
+    const cssPath = path.join(__dirname, 't9.css');
+    if (fs.existsSync(cssPath)) {
+      const cssContent = fs.readFileSync(cssPath, 'utf8');
+      win.webContents.insertCSS(cssContent);
+    }
 
-        // 1. Инжектим CSS напрямую
-        const userscriptCSS = `
-            /* T9 Autocomplete Styles */
-            @keyframes t9SlideDown {
-                from { transform: translateY(-100%); opacity: 0; }
-                to { transform: translateY(0); opacity: 1; }
-            }
+    // Инжект JavaScript файлов
+    const scripts = ['words.js', 't9.js'];
+    for (const file of scripts) {
+      const scriptPath = path.join(__dirname, file);
+      if (fs.existsSync(scriptPath)) {
+        const code = fs.readFileSync(scriptPath, 'utf8');
+        await win.webContents.executeJavaScript(code).catch(e => {
+          console.warn(`Ошибка инжекта ${file}:`, e.message);
+        });
+        await new Promise(resolve => setTimeout(resolve, 100)); // Задержка между скриптами
+      }
+    }
 
-            #t9-suggestions-bar {
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                background: white;
-                border-bottom: 2px solid #007cba;
-                z-index: 10000;
-                display: none;
-                font-family: Arial, sans-serif;
-                font-size: 14px;
-                padding: 8px 10px;
-                max-height: 60px;
-                overflow-x: auto;
-                overflow-y: hidden;
-                white-space: nowrap;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                animation: t9SlideDown 0.3s ease;
+    // Инициализация T9
+    await win.webContents.executeJavaScript(`
+      if (typeof T9Predictor !== 'undefined') {
+        // Полная очистка предыдущей версии
+        if (window.t9Predictor) {
+          try {
+            window.t9Predictor.hideSuggestions();
+            if (window.t9Predictor.inputDebounce) {
+              clearTimeout(window.t9Predictor.inputDebounce);
             }
-
-            #t9-suggestions-bar button {
-                padding: 6px 12px;
-                border: 1px solid #ddd;
-                border-radius: 16px;
-                background: white;
-                cursor: pointer;
-                font-size: 13px;
-                white-space: nowrap;
-                flex-shrink: 0;
-                transition: all 0.2s ease;
-                margin: 0 4px;
-            }
-
-            #t9-suggestions-bar button:hover {
-                background: #e3f2fd;
-                border-color: #007cba;
-                transform: translateY(-1px);
-            }
-
-            #t9-add-word-btn {
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                width: 50px;
-                height: 50px;
-                border-radius: 50%;
-                background: #007cba;
-                color: white;
-                border: none;
-                font-size: 24px;
-                cursor: pointer;
-                z-index: 10001;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                display: none;
-            }
-
-            #t9-dictionary-btn {
-                position: fixed;
-                bottom: 80px;
-                right: 20px;
-                width: 50px;
-                height: 50px;
-                border-radius: 50%;
-                background: #28a745;
-                color: white;
-                border: none;
-                font-size: 20px;
-                cursor: pointer;
-                z-index: 10001;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                display: none;
-            }
-        `;
+          } catch (e) {}
+          window.t9Predictor = null;
+        }
         
-        win.webContents.insertCSS(userscriptCSS);
-        console.log('T9 styles injected');
-
-        // 2. Инжектим скрипты
-        const scriptPaths = [
-            path.join(__dirname, 'words.js'),
-            path.join(__dirname, 't9.js')
-        ];
-
-        // Функция для инжекта одного скрипта
-        const injectScript = (scriptPath) => {
-            return new Promise((resolve, reject) => {
-                if (fs.existsSync(scriptPath)) {
-                    const scriptContent = fs.readFileSync(scriptPath, 'utf8');
-                    
-                    win.webContents.executeJavaScript(scriptContent)
-                        .then(() => {
-                            console.log(`Successfully injected: ${path.basename(scriptPath)}`);
-                            resolve();
-                        })
-                        .catch(err => {
-                            console.warn(`Warning injecting ${path.basename(scriptPath)}:`, err.message);
-                            resolve();
-                        });
-                } else {
-                    reject(new Error(`File not found: ${scriptPath}`));
-                }
-            });
-        };
-
-        // Инжектируем последовательно с задержкой
-        setTimeout(() => {
-            injectScript(scriptPaths[0])
-                .then(() => new Promise(resolve => setTimeout(resolve, 500)))
-                .then(() => injectScript(scriptPaths[1]))
-                .then(() => new Promise(resolve => setTimeout(resolve, 500)))
-                .then(() => {
-                    console.log('All T9 scripts injection attempted');
-                    // Пробуем инициализировать T9
-                    return win.webContents.executeJavaScript(`
-                        setTimeout(() => {
-                            if (typeof T9Predictor !== 'undefined') {
-                                window.t9Predictor = new T9Predictor();
-                                console.log('T9 Autocomplete initialized successfully!');
-                            } else {
-                                console.log('T9Predictor not found, but injection completed');
-                            }
-                        }, 1000);
-                    `);
-                })
-                .then(() => console.log('T9 initialization attempted'))
-                .catch(err => console.error('Error in T9 injection process:', err));
-
-        }, 1000);
-
-    } catch (error) {
-        console.error('Error in T9 autocomplete:', error);
-    }
+        // Новая инициализация
+        window.t9Predictor = new T9Predictor();
+        window.t9Predictor.isEnabled = true;
+        
+        console.log('✅ T9 стабильно инициализирован');
+      } else {
+        console.error('❌ T9Predictor не найден после инжекта');
+      }
+    `);
+    
+    console.log('✅ T9 инжект завершен');
+  } catch (e) {
+    console.error('❌ Ошибка инжекта T9:', e);
+  }
 }
 
-// Меню приложения
+// ===== Menu System =====
 function createMenu(win) {
   const template = [
     {
       label: 'Меню',
       submenu: [
-        { 
-          label: '🔍 Perplexity', 
-          accelerator: 'CmdOrCtrl+P', 
-          click: () => {
-            const currentWindow = BrowserWindow.getFocusedWindow();
-            if (currentWindow) {
-              currentWindow.loadURL('https://www.perplexity.ai/');
-            }
-          }
-        },
-        { 
-          label: '🚀 Copilot', 
-          accelerator: 'CmdOrCtrl+C', 
-          click: () => {
-            const currentWindow = BrowserWindow.getFocusedWindow();
-            if (currentWindow) {
-              currentWindow.loadURL('https://copilot.microsoft.com/');
-            }
-          }
-        },
-        { 
-          label: '✨ Gemini', 
-          accelerator: 'CmdOrCtrl+M', 
-          click: () => {
-            const currentWindow = BrowserWindow.getFocusedWindow();
-            if (currentWindow) {
-              currentWindow.loadURL('https://gemini.google.com/app');
-            }
-          }
-        },
-        { 
-          label: '🧠 DeepSeek', 
-          accelerator: 'CmdOrCtrl+D', 
-          click: () => {
-            const currentWindow = BrowserWindow.getFocusedWindow();
-            if (currentWindow) {
-              currentWindow.loadURL('https://chat.deepseek.com');
-            }
-          }
-        },
-        { 
-          label: '🤖 ChatGPT', 
-          accelerator: 'CmdOrCtrl+G', 
-          click: () => {
-            const currentWindow = BrowserWindow.getFocusedWindow();
-            if (currentWindow) {
-              currentWindow.loadURL('https://chatgpt.com/');
-            }
-          }
-        },
+        { label: '🔍 Perplexity', click: () => win.loadURL('https://www.perplexity.ai/') },
+        { label: '🚀 Copilot', click: () => win.loadURL('https://copilot.microsoft.com/') },
+        { label: '✨ Gemini', click: () => win.loadURL('https://gemini.google.com/app') },
+        { label: '🧠 DeepSeek', click: () => win.loadURL('https://chat.deepseek.com') },
+        { label: '🤖 ChatGPT', click: () => win.loadURL('https://chatgpt.com/') },
         { type: 'separator' },
-        { 
-          label: 'Новое окно', 
-          accelerator: 'CmdOrCtrl+N',
-          click: () => {
-            createWindow();
-          }
-        },
+        { label: 'Перезагрузить страницу', accelerator: 'CmdOrCtrl+R', role: 'reload' },
+        { label: 'Новое окно', accelerator: 'CmdOrCtrl+N', click: () => createWindow() },
         { type: 'separator' },
-        { label: 'Выход', accelerator: 'CmdOrCtrl+Q', role: 'quit' }
+        { label: 'Выход', role: 'quit' }
       ]
     },
     {
@@ -349,7 +320,6 @@ function createMenu(win) {
         { label: 'Свернуть', accelerator: 'CmdOrCtrl+M', role: 'minimize' },
         { label: 'Закрыть', accelerator: 'CmdOrCtrl+W', role: 'close' },
         { type: 'separator' },
-        { label: 'Перезагрузить', accelerator: 'CmdOrCtrl+R', role: 'reload' },
         { label: 'Полный экран', accelerator: 'F11', role: 'togglefullscreen' },
         { label: 'Инструменты разработчика', accelerator: 'F12', role: 'toggledevtools' }
       ]
@@ -358,119 +328,102 @@ function createMenu(win) {
       label: 'Инструменты',
       submenu: [
         {
-          label: 'Включить T9',
-          type: 'checkbox',
-          checked: t9Enabled,
-          click: (menuItem) => {
-            const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) {
-              // Переключаем глобальный флаг
+          label: t9Enabled ? '✅ T9 Включен' : '❌ T9 Выключен',
+          click: async () => {
+            try {
+              const newStatus = await ipcMain.invoke('toggle-t9');
+              console.log('T9 переключен на:', newStatus);
+            } catch (error) {
+              console.error('Ошибка переключения T9:', error);
+              // Fallback
               t9Enabled = !t9Enabled;
-              menuItem.checked = t9Enabled;
-              menuItem.label = t9Enabled ? 'Выключить T9' : 'Включить T9';
+              fs.writeFileSync(configPath, JSON.stringify({ lastUrl: lastOpenedUrl, t9Enabled }));
+              createMenu(win);
               
-              // Передаем состояние в страницу
-              focusedWindow.webContents.executeJavaScript(`
-                if (window.t9Predictor) {
-                  window.t9Predictor.isEnabled = ${t9Enabled};
-                  console.log('T9 set to:', window.t9Predictor.isEnabled ? 'enabled' : 'disabled');
-                  
-                  // Обновляем видимость кнопок
-                  const addBtn = document.getElementById('t9-add-word-btn');
-                  const dictBtn = document.getElementById('t9-dictionary-btn');
-                  
-                  if (${t9Enabled}) {
-                    if (addBtn) addBtn.style.display = 'block';
-                    if (dictBtn) dictBtn.style.display = 'block';
-                  } else {
-                    if (addBtn) addBtn.style.display = 'none';
-                    if (dictBtn) dictBtn.style.display = 'none';
-                    // Скрываем подсказки если выключаем
-                    window.t9Predictor.hideSuggestions();
-                  }
-                  
-                  // Показываем уведомление
-                  const notification = document.createElement('div');
-                  notification.id = 't9-notification';
-                  notification.textContent = 'T9 ' + (${t9Enabled} ? 'включен' : 'выключен');
-                  notification.style.cssText = \`
-                    position: fixed;
-                    top: 20px;
-                    right: 20px;
-                    background: ${t9Enabled ? '#4CAF50' : '#ff4444'};
-                    color: white;
-                    padding: 12px 20px;
-                    border-radius: 6px;
-                    z-index: 10003;
-                    font-family: Arial, sans-serif;
-                    font-size: 14px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    animation: t9SlideIn 0.3s ease;
-                  \`;
-                  document.body.appendChild(notification);
-                  
-                  setTimeout(() => {
-                    if (notification.parentNode) notification.remove();
-                  }, 2000);
-                }
-              `);
+              dialog.showMessageBox(win, {
+                type: 'info',
+                title: 'TextMage',
+                message: `T9 ${t9Enabled ? 'включен' : 'выключен'}`,
+                detail: t9Enabled ? 'Автодополнение и T9 ввод активны' : 'Режим чистого браузера'
+              });
+              
+              if (t9Enabled) win.reload();
             }
           }
         },
         { type: 'separator' },
         {
-          label: 'Управление словарем',
-          accelerator: 'Ctrl+Shift+T',
+          label: '📚 Управление словарем',
           click: () => {
-            const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) {
-              focusedWindow.webContents.executeJavaScript(`
-                if (window.t9Predictor) {
+            if (t9Enabled) {
+              win.webContents.executeJavaScript(`
+                if (window.t9Predictor && window.t9Predictor.showDictionaryManager) {
                   window.t9Predictor.showDictionaryManager();
                 } else {
-                  alert('T9 не инициализирован. Перезагрузите страницу.');
+                  alert('T9 не инициализирован. Попробуйте перезагрузить страницу.');
                 }
               `);
+            } else {
+              dialog.showMessageBox(win, {
+                type: 'info',
+                title: 'T9 выключен',
+                message: 'Включите T9 для доступа к словарю'
+              });
             }
           }
         },
         {
-          label: 'Добавить слово',
+          label: '➕ Добавить слово',
           click: () => {
-            const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) {
-              focusedWindow.webContents.executeJavaScript(`
-                if (window.t9Predictor) {
+            if (t9Enabled) {
+              win.webContents.executeJavaScript(`
+                if (window.t9Predictor && window.t9Predictor.showAddWordDialog) {
                   window.t9Predictor.showAddWordDialog();
                 }
               `);
+            } else {
+              dialog.showMessageBox(win, {
+                type: 'info',
+                title: 'T9 выключен',
+                message: 'Включите T9 для добавления слов'
+              });
             }
           }
         },
         { type: 'separator' },
         {
-          label: 'Импорт слов',
+          label: '📥 Импорт слов',
           click: () => {
-            const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) {
-              focusedWindow.webContents.executeJavaScript(`
-                if (window.t9Predictor) {
-                  window.t9Predictor.importWords();
+            if (t9Enabled) {
+              win.webContents.executeJavaScript(`
+                if (window.t9Predictor && window.t9Predictor.importWordsFromFile) {
+                  window.t9Predictor.importWordsFromFile();
                 }
               `);
+            } else {
+              dialog.showMessageBox(win, {
+                type: 'info',
+                title: 'T9 выключен',
+                message: 'Включите T9 для импорта слов'
+              });
             }
           }
         },
         {
-          label: 'Экспорт слов',
+          label: '📤 Экспорт слов',
           click: () => {
-            const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) {
-              focusedWindow.webContents.executeJavaScript(`
-                if (window.t9Predictor) {
-                  window.t9Predictor.exportWords();
+            if (t9Enabled) {
+              win.webContents.executeJavaScript(`
+                if (window.t9Predictor && window.t9Predictor.exportDictionary) {
+                  window.t9Predictor.exportDictionary();
                 }
               `);
+            } else {
+              dialog.showMessageBox(win, {
+                type: 'info',
+                title: 'T9 выключен',
+                message: 'Включите T9 для экспорта слов'
+              });
             }
           }
         }
@@ -480,44 +433,33 @@ function createMenu(win) {
       label: 'Помощь',
       submenu: [
         {
-          label: 'О программе TextMage',
+          label: 'О программе',
           click: () => {
-            const aboutHtmlPath = path.join(__dirname, 'about.html');
-            if (!fs.existsSync(aboutHtmlPath)) {
-              dialog.showMessageBox({
-                type: 'info',
+            const aboutPath = path.join(__dirname, 'about.html');
+            if (fs.existsSync(aboutPath)) {
+              const about = new BrowserWindow({
+                width: 400,
+                height: 600,
                 title: 'О программе TextMage',
-                message: 'TextMage',
-                detail: 'Версия: 1.0.0\nАвтор: Legalize86\nМагия: T9 автодополнение\n\nВозможности волшебства:\n• Умное автодополнение\n• T9 ввод цифрами\n• Книга заклинаний (словарь)\n• Поддержка Perplexity, Copilot, Gemini, DeepSeek & ChatGPT',
-                buttons: ['OK']
+                icon: path.join(__dirname, 'assets', 'icon.png'),
+                resizable: false,
+                parent: mainWindow,
+                modal: false,
+                autoHideMenuBar: true,
+                webPreferences: {
+                  nodeIntegration: false,
+                  contextIsolation: true
+                }
               });
-              return;
+              about.loadFile(aboutPath);
+            } else {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'О TextMage',
+                message: 'TextMage 1.0.0',
+                detail: 'Автор: Legalize86\nAI помощник с T9 автодополнением'
+              });
             }
-
-            const aboutWindow = new BrowserWindow({
-              width: 400,
-              height: 650,
-              resizable: false,
-              parent: BrowserWindow.getFocusedWindow(),
-              modal: false,
-              icon: path.join(__dirname, 'assets', 'icon.png'),
-              title: 'О программе TextMage',
-              webPreferences: {
-                nodeIntegration: false,
-                contextIsolation: true
-              },
-              autoHideMenuBar: true,
-              minimizable: true,
-              closable: true,
-              maximizable: false
-            });
-
-            aboutWindow.setMenu(null);
-            aboutWindow.loadFile('about.html');
-
-            aboutWindow.on('blur', () => {
-              aboutWindow.close();
-            });
           }
         }
       ]
@@ -528,60 +470,25 @@ function createMenu(win) {
   Menu.setApplicationMenu(menu);
 }
 
-// Сохраняем URL при закрытии приложения
+// ===== App Event Handlers =====
 app.on('before-quit', () => {
-  // Сохраняем последнюю вкладку в localStorage для следующего запуска
-  if (lastOpenedUrl) {
-    const userDataPath = app.getPath('userData');
-    const configPath = path.join(userDataPath, 'config.json');
-    
-    try {
-      const config = { 
-        lastUrl: lastOpenedUrl,
-        t9Enabled: t9Enabled 
-      };
-      fs.writeFileSync(configPath, JSON.stringify(config));
-    } catch (error) {
-      console.error('Error saving config:', error);
-    }
-  }
-});
-
-// Загружаем сохраненный URL при запуске
-app.whenReady().then(() => {
   try {
-    const userDataPath = app.getPath('userData');
-    const configPath = path.join(userDataPath, 'config.json');
-    
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (config.lastUrl) {
-        lastOpenedUrl = config.lastUrl;
-      }
-      if (config.t9Enabled !== undefined) {
-        t9Enabled = config.t9Enabled;
-      }
-    }
-  } catch (error) {
-    console.error('Error loading config:', error);
+    fs.writeFileSync(configPath, JSON.stringify({ lastUrl: lastOpenedUrl, t9Enabled }));
+  } catch (e) {
+    console.warn('Save config on quit error:', e);
   }
-  
-  createWindow();
 });
 
-// Обработка закрытия приложения
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// Подавление GLib ошибок
+// ===== Performance Optimizations =====
 app.commandLine.appendSwitch('--disable-features', 'VizDisplayCompositor');
 app.commandLine.appendSwitch('--disable-logging');
+
+console.log('🚀 TextMage запущен');

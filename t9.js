@@ -12,6 +12,13 @@ class T9Predictor {
         this.selectedIndex = -1;
         this.isEnabled = true;
         
+        // === ДОБАВЛЕНО ДЛЯ СТАБИЛЬНОСТИ ===
+        this.lastInputTime = 0;
+        this.inputDebounce = null;
+        this.isProcessing = false;
+        this._handlers = {};
+        // === КОНЕЦ ДОБАВЛЕНИЯ ===
+        
         this.loadDictionary();
         this.createSuggestionBar();
         this.createControlButtons();
@@ -24,9 +31,13 @@ class T9Predictor {
     toggleT9() {
         this.isEnabled = !this.isEnabled;
         this.updateButtonsVisibility();
+        
         if (!this.isEnabled) {
             this.hideSuggestions();
+            // Очищаем таймауты при выключении
+            clearTimeout(this.inputDebounce);
         }
+        
         console.log(`T9 ${this.isEnabled ? 'включен' : 'выключен'}`);
         return this.isEnabled;
     }
@@ -122,7 +133,7 @@ class T9Predictor {
     }
 
     // Массовый импорт слов
-    importWords(wordList) {
+    importWordsFromArray(wordList) {
         if (!Array.isArray(wordList)) {
             this.showNotification('Ошибка: должен быть массив слов', 'error');
             return;
@@ -302,7 +313,6 @@ class T9Predictor {
                 }
             };
             
-            // ИСПРАВЛЕННЫЙ обработчик клика
             button.onclick = (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -340,7 +350,6 @@ class T9Predictor {
 
     highlightSuggestion(index) {
         const buttons = this.suggestionsContainer.querySelectorAll('button');
-        // Исключаем кнопку закрытия из навигации
         const suggestionButtons = Array.from(buttons).slice(0, -1);
         
         suggestionButtons.forEach((button, i) => {
@@ -359,7 +368,6 @@ class T9Predictor {
         
         this.selectedIndex = index;
         
-        // Прокручиваем к выбранному элементу
         if (suggestionButtons[index]) {
             suggestionButtons[index].scrollIntoView({
                 behavior: 'smooth',
@@ -387,28 +395,22 @@ class T9Predictor {
             isContentEditable: input.isContentEditable 
         });
 
-        // Получаем текущее значение разными способами
         let currentValue = '';
         if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
             currentValue = input.value || '';
         } else if (input.isContentEditable) {
-            // Для contenteditable пробуем разные свойства
             currentValue = input.textContent || input.innerText || '';
-            // Убираем HTML теги если они есть
             currentValue = currentValue.replace(/<[^>]*>/g, '');
         }
         
-        // Разбиваем текст на слова
         const words = currentValue.trim().split(/\s+/);
         
         if (words.length > 0) {
-            // Получаем текущий текст до последнего слова
             const lastWord = words[words.length - 1];
             const lastWordIndex = currentValue.lastIndexOf(lastWord);
             const textBeforeLastWord = currentValue.substring(0, lastWordIndex);
-            
-            // Создаем новое значение: текст до последнего слова + выбранное слово + пробел
-            const newValue = textBeforeLastWord + word + ' ';
+            // УБРАН лишний пробел после слова
+            const newValue = textBeforeLastWord + word;
             
             console.log('Replacing text:', {
                 lastWord,
@@ -416,25 +418,43 @@ class T9Predictor {
                 newValue
             });
             
-            // Устанавливаем новое значение
             if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
                 input.value = newValue;
             } else if (input.isContentEditable) {
-                // Для contenteditable элементов используем innerText
-                input.innerText = newValue;
-                // Также пробуем textContent для совместимости
-                input.textContent = newValue;
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    range.deleteContents();
+                    range.insertNode(document.createTextNode(newValue));
+                    
+                    range.setStart(input, input.childNodes.length);
+                    range.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                } else {
+                    input.textContent = newValue;
+                    this.setCursorToEnd(input);
+                }
             }
-            
-            // Устанавливаем курсор в конец
             this.setCursorToEnd(input);
         } else {
-            // Если нет слов, просто вставляем слово
             if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
-                input.value = word + ' ';
+                input.value = word; // УБРАН пробел
             } else if (input.isContentEditable) {
-                input.innerText = word + ' ';
-                input.textContent = word + ' ';
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    range.deleteContents();
+                    range.insertNode(document.createTextNode(word)); // УБРАН пробел
+                    
+                    range.setStart(input, input.childNodes.length);
+                    range.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                } else {
+                    input.textContent = word; // УБРАН пробел
+                    this.setCursorToEnd(input);
+                }
             }
             this.setCursorToEnd(input);
         }
@@ -443,7 +463,6 @@ class T9Predictor {
         this.hideSuggestions();
         input.focus();
         
-        // Триггерим события изменения
         const inputEvent = new Event('input', { bubbles: true });
         const changeEvent = new Event('change', { bubbles: true });
         input.dispatchEvent(inputEvent);
@@ -452,7 +471,6 @@ class T9Predictor {
         console.log('Word successfully selected:', word);
     }
 
-    // Метод для установки курсора в конец
     setCursorToEnd(element) {
         if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
             element.focus();
@@ -469,10 +487,18 @@ class T9Predictor {
     }
 
     setupEventListeners() {
-        // Глобальные обработчики событий
-        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-        document.addEventListener('input', (e) => this.handleInput(e));
-        document.addEventListener('click', (e) => this.handleClick(e));
+        // Сохраняем ссылки на обработчики для возможности удаления
+        this._handlers.keydown = (e) => this.handleKeyDown(e);
+        this._handlers.input = (e) => this.handleInput(e);
+        this._handlers.click = (e) => this.handleClick(e);
+        this._handlers.focusin = (e) => this.handleFocusIn(e);
+        this._handlers.focusout = (e) => this.handleFocusOut(e);
+        
+        document.addEventListener('keydown', this._handlers.keydown);
+        document.addEventListener('input', this._handlers.input);
+        document.addEventListener('click', this._handlers.click);
+        document.addEventListener('focusin', this._handlers.focusin);
+        document.addEventListener('focusout', this._handlers.focusout);
         
         console.log('T9 event listeners setup');
     }
@@ -480,7 +506,6 @@ class T9Predictor {
     handleKeyDown(event) {
         if (!this.isEnabled) return;
         
-        // Обработка навигации по предложениям
         if (this.suggestionBar && this.suggestionBar.style.display !== 'none') {
             const suggestions = this.currentSuggestions;
             
@@ -512,7 +537,6 @@ class T9Predictor {
             }
         }
         
-        // Обработка T9 ввода цифр
         if ((event.target.tagName === 'TEXTAREA' || 
              event.target.tagName === 'INPUT' || 
              event.target.isContentEditable) &&
@@ -523,11 +547,10 @@ class T9Predictor {
     }
 
     handleInput(event) {
-        if (!this.isEnabled) return;
+        if (!this.isEnabled || this.isProcessing) return;
         
         const target = event.target;
         
-        // Игнорируем события от самой T9 системы
         if (target.id === 't9-suggestions-bar' || 
             target.closest('#t9-suggestions-bar') ||
             target.id === 't9-add-word-btn' ||
@@ -535,14 +558,23 @@ class T9Predictor {
             return;
         }
         
-        // Обрабатываем только текстовые поля
-        if (this.isInputElement(target)) {
-            this.processTextInput(target);
-        }
+        if (!this.isInputElement(target)) return;
+        
+        // Дебаунс 150ms для стабильности
+        clearTimeout(this.inputDebounce);
+        this.inputDebounce = setTimeout(() => {
+            this.isProcessing = true;
+            try {
+                this.processTextInput(target);
+            } catch (error) {
+                console.error('T9 input processing error:', error);
+            } finally {
+                this.isProcessing = false;
+            }
+        }, 150);
     }
 
     handleClick(event) {
-        // Скрываем подсказки при клике вне T9 интерфейса
         if (this.suggestionBar && 
             this.suggestionBar.style.display !== 'none' &&
             !event.target.closest('#t9-suggestions-bar')) {
@@ -550,10 +582,38 @@ class T9Predictor {
         }
     }
 
+    handleFocusIn(event) {
+        if (!this.isEnabled) return;
+        
+        const target = event.target;
+        if (this.isInputElement(target)) {
+            // Показываем кнопки при фокусе на поле ввода
+            setTimeout(() => {
+                if (this.addWordBtn) this.addWordBtn.style.display = 'block';
+                if (this.dictBtn) this.dictBtn.style.display = 'block';
+            }, 100);
+        }
+    }
+
+    handleFocusOut(event) {
+        if (!this.isEnabled) return;
+        
+        // Скрываем кнопки с задержкой
+        setTimeout(() => {
+            const active = document.activeElement;
+            if (active !== this.addWordBtn && 
+                active !== this.dictBtn &&
+                (!active || !active.closest || !active.closest('#t9-add-word-dialog')) &&
+                (!active || !active.closest || !active.closest('#t9-dictionary-manager'))) {
+                if (this.addWordBtn) this.addWordBtn.style.display = 'none';
+                if (this.dictBtn) this.dictBtn.style.display = 'none';
+            }
+        }, 200);
+    }
+
     processT9Input(input, digit) {
         if (!this.isEnabled) return;
         
-        // Получаем текущее значение
         let currentValue = '';
         if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
             currentValue = input.value || '';
@@ -561,11 +621,9 @@ class T9Predictor {
             currentValue = input.textContent || input.innerText || '';
         }
         
-        // Разбиваем на слова и берем последнее
         const words = currentValue.trim().split(/\s+/);
         const lastWord = words[words.length - 1] || '';
         
-        // Если последнее слово состоит из цифр, добавляем новую цифру
         if (lastWord.match(/^[2-9]+$/)) {
             const newDigits = lastWord + digit;
             const suggestions = this.digitsToWords(newDigits);
@@ -574,7 +632,6 @@ class T9Predictor {
                 this.showSuggestions(input, suggestions);
             }
         } else if (digit.match(/[2-9]/)) {
-            // Начинаем новое T9 слово
             const suggestions = this.digitsToWords(digit);
             if (suggestions.length > 0) {
                 this.showSuggestions(input, suggestions);
@@ -585,7 +642,6 @@ class T9Predictor {
     processTextInput(input) {
         if (!this.isEnabled) return;
         
-        // Получаем текущее значение
         let currentValue = '';
         if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
             currentValue = input.value || '';
@@ -593,11 +649,9 @@ class T9Predictor {
             currentValue = input.textContent || input.innerText || '';
         }
         
-        // Разбиваем на слова и берем последнее
         const words = currentValue.trim().split(/\s+/);
         const lastWord = words[words.length - 1] || '';
         
-        // Если слово достаточно длинное, показываем автодополнение
         if (lastWord.length >= 2 && lastWord.match(/^[а-яa-z]+$/i)) {
             const suggestions = this.autocompleteWord(lastWord);
             if (suggestions.length > 0) {
@@ -606,19 +660,16 @@ class T9Predictor {
             }
         }
         
-        // Скрываем подсказки если не подходят условия
         this.hideSuggestions();
     }
 
     createControlButtons() {
         this.createAddWordButton();
         this.createDictionaryButton();
-        this.setupButtonVisibility();
-        this.updateButtonsVisibility(); // Устанавливаем начальную видимость
+        this.updateButtonsVisibility();
     }
 
     createDictionaryButton() {
-        // Удаляем старую кнопку если есть
         const oldBtn = document.getElementById('t9-dictionary-btn');
         if (oldBtn) oldBtn.remove();
         
@@ -662,7 +713,6 @@ class T9Predictor {
     }
 
     createAddWordButton() {
-        // Удаляем старую кнопку если есть
         const oldBtn = document.getElementById('t9-add-word-btn');
         if (oldBtn) oldBtn.remove();
         
@@ -705,30 +755,6 @@ class T9Predictor {
         document.body.appendChild(this.addWordBtn);
     }
 
-    setupButtonVisibility() {
-        // Отслеживаем фокус на полях ввода
-        document.addEventListener('focusin', (e) => {
-            if (this.isInputElement(e.target) && this.isEnabled) {
-                this.addWordBtn.style.display = 'block';
-                this.dictBtn.style.display = 'block';
-            }
-        });
-        
-        document.addEventListener('focusout', (e) => {
-            // Не скрываем сразу, чтобы можно было кликнуть на кнопку
-            setTimeout(() => {
-                const active = document.activeElement;
-                if (active !== this.addWordBtn && 
-                    active !== this.dictBtn &&
-                    (!active || !active.closest || !active.closest('#t9-add-word-dialog')) &&
-                    (!active || !active.closest || !active.closest('#t9-dictionary-manager'))) {
-                    this.addWordBtn.style.display = 'none';
-                    this.dictBtn.style.display = 'none';
-                }
-            }, 100);
-        });
-    }
-
     isInputElement(el) {
         if (!el) return false;
         const tag = el.tagName.toLowerCase();
@@ -740,7 +766,6 @@ class T9Predictor {
     }
 
     showAddWordDialog() {
-        // Удаляем старый диалог если есть
         const oldDialog = document.getElementById('t9-add-word-dialog');
         if (oldDialog) oldDialog.remove();
         
@@ -772,7 +797,6 @@ class T9Predictor {
         
         document.body.appendChild(dialog);
         
-        // Обработчики для диалога
         document.getElementById('t9-cancel-add').onclick = () => {
             dialog.remove();
         };
@@ -790,18 +814,15 @@ class T9Predictor {
             }
         };
         
-        // Закрытие по клику вне диалога
         dialog.onclick = (e) => {
             if (e.target === dialog) {
                 dialog.remove();
             }
         };
         
-        // Фокус на поле ввода
         document.getElementById('t9-new-word').focus();
     }
 
-    // ЭКСПОРТ слов в файл
     exportWords() {
         try {
             const wordsData = JSON.stringify(this.wordFreq, null, 2);
@@ -823,8 +844,7 @@ class T9Predictor {
         }
     }
 
-    // ИМПОРТ слов из файла
-    importWords() {
+    importWordsFromFile() {
         try {
             const input = document.createElement('input');
             input.type = 'file';
@@ -857,7 +877,6 @@ class T9Predictor {
                         this.saveLearnedData();
                         this.showNotification(`Импортировано ${importedCount} слов`);
                         
-                        // Обновляем менеджер если он открыт
                         const manager = document.getElementById('t9-dictionary-manager');
                         if (manager) {
                             manager.remove();
@@ -881,7 +900,6 @@ class T9Predictor {
     }
 
     showDictionaryManager() {
-        // Удаляем старый менеджер если есть
         const oldManager = document.getElementById('t9-dictionary-manager');
         if (oldManager) oldManager.remove();
         
@@ -905,7 +923,6 @@ class T9Predictor {
             flex-direction: column;
         `;
         
-        // Получаем самые частые слова
         const frequentWords = Object.entries(this.wordFreq)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 50);
@@ -934,7 +951,6 @@ class T9Predictor {
         
         document.body.appendChild(manager);
         
-        // Обработчики для менеджера
         document.getElementById('t9-close-manager').onclick = () => {
             manager.remove();
         };
@@ -944,21 +960,20 @@ class T9Predictor {
         };
         
         document.getElementById('t9-import-words').onclick = () => {
-            this.importWords();
+            this.importWordsFromFile();
         };
         
         document.getElementById('t9-clear-words').onclick = () => {
             if (confirm('Очистить весь словарь? Это действие нельзя отменить.')) {
                 this.wordFreq = {};
                 this.words.clear();
-                this.loadDictionary(); // Перезагружаем базовый словарь
+                this.loadDictionary();
                 this.saveLearnedData();
                 manager.remove();
                 this.showNotification('Словарь очищен');
             }
         };
         
-        // Закрытие по клику вне менеджера
         manager.onclick = (e) => {
             if (e.target === manager) {
                 manager.remove();
@@ -967,7 +982,6 @@ class T9Predictor {
     }
 
     showNotification(message, type = 'success') {
-        // Удаляем старые уведомления
         const oldNotif = document.getElementById('t9-notification');
         if (oldNotif) oldNotif.remove();
         
@@ -991,7 +1005,6 @@ class T9Predictor {
         
         document.body.appendChild(notif);
         
-        // Автоматическое скрытие
         setTimeout(() => {
             if (notif.parentNode) {
                 notif.style.animation = 't9SlideOut 0.3s ease';
@@ -1003,13 +1016,21 @@ class T9Predictor {
             }
         }, 3000);
     }
+
+    // Метод для импорта слов (вызывается из меню)
+    importWords() {
+        this.importWordsFromFile();
+    }
+
+    // Метод для экспорта слов (вызывается из меню)  
+    exportDictionary() {
+        this.exportWords();
+    }
 }
 
-// Автоматическая инициализация при загрузке
 if (typeof window !== 'undefined') {
     window.T9Predictor = T9Predictor;
     
-    // Инициализация когда DOM готов
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             window.t9Predictor = new T9Predictor();
