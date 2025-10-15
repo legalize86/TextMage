@@ -456,7 +456,7 @@ function createMenu(win) {
               dialog.showMessageBox(mainWindow, {
                 type: 'info',
                 title: 'О TextMage',
-                message: 'TextMage 1.0.0',
+                message: 'TextMage 1.1.0',
                 detail: 'Автор: Legalize86\nAI помощник с T9 автодополнением'
               });
             }
