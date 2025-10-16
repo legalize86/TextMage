@@ -620,7 +620,7 @@ function createMenu(win) {
             if (fs.existsSync(aboutPath)) {
               const about = new BrowserWindow({
                 width: 400,
-                height: 600,
+                height: 650,
                 title: `О программе TextMage v${version}`,
                 icon: path.join(__dirname, 'assets', 'icon.png'),
                 resizable: false,
