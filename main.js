@@ -17,6 +17,22 @@ const defaultUA = 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Fire
 const copilotUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
 const deepseekUA = 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 LibreWolf/130.0';
 
+// ===== Version Sync Function =====
+function updateAboutVersion() {
+  try {
+    const { version } = require('./package.json');
+    let aboutContent = fs.readFileSync('about.html', 'utf8');
+    aboutContent = aboutContent.replace(
+      /<p>Версия: <span id="version-display">[^<]*<\/span><\/p>/,
+      `<p>Версия: <span id="version-display">${version}</span></p>`
+    );
+    fs.writeFileSync('about.html', aboutContent);
+    console.log('About page updated to version:', version);
+  } catch (error) {
+    console.log('Note: about.html not found or couldn\'t be updated');
+  }
+}
+
 // ===== IPC Handlers =====
 ipcMain.handle('read-file', async (_, filePath) => {
   try {
@@ -111,6 +127,166 @@ ipcMain.handle('toggle-t9', async () => {
 
 ipcMain.handle('get-t9-status', async () => t9Enabled);
 
+// Обработчик для открытия окна "О магии"
+ipcMain.on('open-magic-window', () => {
+    const magicWindow = new BrowserWindow({
+        width: 400,
+        height: 720,
+        title: 'О магии TextMage',
+        icon: path.join(__dirname, 'assets', 'icon.png'),
+        resizable: false,
+        parent: null,
+        modal: false,
+        autoHideMenuBar: true,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            webSecurity: false
+        }
+    });
+
+    const magicHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>О магии TextMage</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #333;
+                height: 100vh;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .modal-content {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+                width: 380px;
+                max-width: 90vw;
+                overflow: hidden;
+                border: 1px solid #e1e5e9;
+            }
+            .modal-header {
+                background: linear-gradient(135deg, #8B5CF6, #6D28D9);
+                color: white;
+                padding: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .modal-header h3 {
+                margin: 0;
+                font-size: 18px;
+                font-weight: 600;
+                flex: 1;
+                text-align: center;
+            }
+            .modal-logo { font-size: 24px; margin-right: 10px; }
+            .modal-close {
+                background: none;
+                border: none;
+                color: white;
+                font-size: 24px;
+                cursor: pointer;
+                padding: 0;
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.2s ease;
+            }
+            .modal-close:hover { background: rgba(255, 255, 255, 0.2); }
+            .modal-body { padding: 25px; }
+            .modal-body p {
+                margin-bottom: 20px;
+                color: #333;
+                line-height: 1.5;
+                text-align: center;
+            }
+            .magic-features { display: flex; flex-direction: column; gap: 15px; }
+            .magic-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border-left: 3px solid #8B5CF6;
+            }
+            .magic-icon { font-size: 18px; flex-shrink: 0; }
+            .magic-item span:last-child { color: #555; line-height: 1.4; }
+            .modal-footer {
+                padding: 20px;
+                border-top: 1px solid #f1f5f9;
+                display: flex;
+                justify-content: center;
+            }
+            .modal-btn {
+                background: #8B5CF6;
+                color: white;
+                border: none;
+                padding: 12px 30px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+                transition: all 0.2s ease;
+            }
+            .modal-btn:hover { background: #7C3AED; transform: translateY(-1px); }
+        </style>
+    </head>
+    <body>
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-logo">✨</div>
+                <h3>О магии TextMage</h3>
+                <button class="modal-close" onclick="window.close()">×</button>
+            </div>
+            <div class="modal-body">
+                <p>TextMage - это магический помощник для быстрого набора текста в AI-ассистентах!</p>
+                <div class="magic-features">
+                    <div class="magic-item">
+                        <span class="magic-icon">🔮</span>
+                        <span>Умный запуск: открывает последнюю вкладку или Copilot по умолчанию</span>
+                    </div>
+                    <div class="magic-item">
+                        <span class="magic-icon">✨</span>
+                        <span>Используйте T9 для ускорения ввода в любом AI-ассистенте</span>
+                    </div>
+                    <div class="magic-item">
+                        <span class="magic-icon">📚</span>
+                        <span>Добавляйте свои заклинания в словарь</span>
+                    </div>
+                    <div class="magic-item">
+                        <span class="magic-icon">🚀</span>
+                        <span>Быстрый доступ к 5 AI-ассистентам: Perplexity, Copilot, Gemini, DeepSeek, ChatGPT</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="window.close()">Понятно</button>
+            </div>
+        </div>
+        <script>
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') window.close();
+            });
+        </script>
+    </body>
+    </html>
+    `;
+
+    magicWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(magicHTML)}`);
+});
+
 // ===== App Startup =====
 app.whenReady().then(() => {
   try {
@@ -122,15 +298,21 @@ app.whenReady().then(() => {
   } catch (e) {
     console.warn('Config read error:', e);
   }
+  
+  // Обновляем версию в about.html перед созданием окна
+  updateAboutVersion();
+  
   createWindow();
 });
 
 // ===== Window Management =====
 function createWindow() {
+  const { version } = require('./package.json');
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'TextMage',
+    title: `TextMage`,
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       nodeIntegration: true,
@@ -216,7 +398,7 @@ function createWindow() {
                         t9Enabled;
     
     if (shouldInject) {
-      setTimeout(() => injectT9(mainWindow), 800); // Увеличил задержку для стабильности
+      setTimeout(() => injectT9(mainWindow), 800);
     }
   });
 
@@ -249,14 +431,13 @@ async function injectT9(win) {
         await win.webContents.executeJavaScript(code).catch(e => {
           console.warn(`Ошибка инжекта ${file}:`, e.message);
         });
-        await new Promise(resolve => setTimeout(resolve, 100)); // Задержка между скриптами
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
     // Инициализация T9
     await win.webContents.executeJavaScript(`
       if (typeof T9Predictor !== 'undefined') {
-        // Полная очистка предыдущей версии
         if (window.t9Predictor) {
           try {
             window.t9Predictor.hideSuggestions();
@@ -267,7 +448,6 @@ async function injectT9(win) {
           window.t9Predictor = null;
         }
         
-        // Новая инициализация
         window.t9Predictor = new T9Predictor();
         window.t9Predictor.isEnabled = true;
         
@@ -285,6 +465,8 @@ async function injectT9(win) {
 
 // ===== Menu System =====
 function createMenu(win) {
+  const { version } = require('./package.json');
+  
   const template = [
     {
       label: 'Меню',
@@ -335,7 +517,6 @@ function createMenu(win) {
               console.log('T9 переключен на:', newStatus);
             } catch (error) {
               console.error('Ошибка переключения T9:', error);
-              // Fallback
               t9Enabled = !t9Enabled;
               fs.writeFileSync(configPath, JSON.stringify({ lastUrl: lastOpenedUrl, t9Enabled }));
               createMenu(win);
@@ -433,30 +614,31 @@ function createMenu(win) {
       label: 'Помощь',
       submenu: [
         {
-          label: 'О программе',
+          label: `О программе`,
           click: () => {
             const aboutPath = path.join(__dirname, 'about.html');
             if (fs.existsSync(aboutPath)) {
               const about = new BrowserWindow({
                 width: 400,
                 height: 600,
-                title: 'О программе TextMage',
+                title: `О программе TextMage v${version}`,
                 icon: path.join(__dirname, 'assets', 'icon.png'),
                 resizable: false,
-                parent: mainWindow,
+                parent: null,
                 modal: false,
                 autoHideMenuBar: true,
                 webPreferences: {
-                  nodeIntegration: false,
-                  contextIsolation: true
+                  nodeIntegration: true,
+                  contextIsolation: false,
+                  webSecurity: false
                 }
               });
               about.loadFile(aboutPath);
             } else {
               dialog.showMessageBox(mainWindow, {
                 type: 'info',
-                title: 'О TextMage',
-                message: 'TextMage 1.1.0',
+                title: `О TextMage v${version}`,
+                message: `TextMage ${version}`,
                 detail: 'Автор: Legalize86\nAI помощник с T9 автодополнением'
               });
             }
